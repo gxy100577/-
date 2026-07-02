@@ -9,13 +9,30 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'smart-farm-secret-key-2024';
-const DATA_FILE = path.join(__dirname, 'data.json');
+
+const VOLUME_DIR = process.env.DATA_DIR || '/data';
+const DEFAULT_DATA_FILE = path.join(__dirname, 'data.json');
+const UPLOADS_DIR = fs.existsSync(VOLUME_DIR) ? path.join(VOLUME_DIR, 'uploads') : path.join(__dirname, 'uploads');
+
+let DATA_FILE;
+if (fs.existsSync(VOLUME_DIR)) {
+  DATA_FILE = path.join(VOLUME_DIR, 'data.json');
+  if (!fs.existsSync(DATA_FILE) && fs.existsSync(DEFAULT_DATA_FILE)) {
+    fs.copyFileSync(DEFAULT_DATA_FILE, DATA_FILE);
+  }
+} else {
+  DATA_FILE = DEFAULT_DATA_FILE;
+}
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ====================== 工具函数 ======================
 
