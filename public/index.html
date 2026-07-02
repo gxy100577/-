@@ -2394,7 +2394,7 @@
 <script src="https://cdn.jsdelivr.net/npm/axios@1.6.2/dist/axios.min.js"></script>
 
 <script>
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = window.location.origin + '/api';
 
 const axiosInstance = axios.create({
   baseURL: API_BASE,
