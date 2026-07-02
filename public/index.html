@@ -3056,7 +3056,8 @@ new Vue({
       costProfitStats: { totalCost: 0, totalIncome: 0, netProfit: 0, profitRate: 0 },
       costProfitList: [],
       bigStats: { totalFields: 0, totalArea: 0, totalYield: 0, totalValue: 0, totalMaterialUsed: 0, totalLabor: 0 },
-      chartStats: { totalFields: 0, totalCrops: 0, totalWorkorders: 0, totalMaterials: 0 }
+      chartStats: { totalFields: 0, totalCrops: 0, totalWorkorders: 0, totalMaterials: 0 },
+      chartInstances: {}
     };
   },
   computed: {
@@ -3080,6 +3081,9 @@ new Vue({
       this.initOptions();
       this.loadDashboardData();
     }
+  },
+  beforeDestroy() {
+    this.disposeCharts();
   },
   methods: {
     hasPerm(perm) {
@@ -3202,7 +3206,7 @@ new Vue({
     handleMenuSelect(index) {
       this.activeMenu = index;
       this.pageTitle = this.pageTitles[index] || '';
-      this.$nextTick(() => {
+      this.$nextTick(async () => {
         if (index === 'user-list') this.loadUsers();
         else if (index === 'role-list') this.loadRoles();
         else if (index === 'profile') this.loadProfile();
@@ -3222,8 +3226,14 @@ new Vue({
         else if (index === 'harvest-list') this.loadHarvests();
         else if (index === 'sales-list') this.loadSales();
         else if (index === 'costprofit-list') this.loadCostProfit();
-        else if (index === 'dashboard-big') this.loadBigDashboard();
-        else if (index === 'dashboard-charts') this.loadChartsDashboard();
+        else if (index === 'dashboard-big') {
+          if (!this.fieldOptions || this.fieldOptions.length === 0) await this.initOptions();
+          this.loadBigDashboard();
+        }
+        else if (index === 'dashboard-charts') {
+          if (!this.fieldOptions || this.fieldOptions.length === 0) await this.initOptions();
+          this.loadChartsDashboard();
+        }
       });
     },
     async initOptions() {
@@ -4371,8 +4381,9 @@ new Vue({
       }
     },
     initMaterialUsageChart(statsData) {
-      if (!this.$refs.materialUsageChart) return;
-      const chart = echarts.init(this.$refs.materialUsageChart);
+      this.disposeCharts('materialUsage');
+      const chart = this.getChartInstance('materialUsageChart');
+      if (!chart) return;
       const categories = ['肥料', '农药', '种子', '工具'];
       let data = [0, 0, 0, 0];
       if (statsData && Array.isArray(statsData)) {
@@ -4673,61 +4684,100 @@ new Vue({
         this.$message.error('加载大屏数据失败');
       }
     },
+    disposeCharts(prefix) {
+      Object.keys(this.chartInstances).forEach(key => {
+        if (prefix && !key.startsWith(prefix)) return;
+        if (this.chartInstances[key]) {
+          try {
+            this.chartInstances[key].dispose();
+          } catch (e) {}
+          delete this.chartInstances[key];
+        }
+      });
+    },
+    getChartInstance(refName) {
+      if (!this.$refs[refName]) return null;
+      if (this.chartInstances[refName]) {
+        try {
+          this.chartInstances[refName].dispose();
+        } catch (e) {}
+      }
+      try {
+        this.chartInstances[refName] = echarts.init(this.$refs[refName]);
+        return this.chartInstances[refName];
+      } catch (e) {
+        console.error('初始化图表失败:', refName, e);
+        return null;
+      }
+    },
     initBigCharts() {
+      this.disposeCharts('big');
       const darkColor = { textStyle: { color: '#e0e0e0' }, axisLine: { lineStyle: { color: '#888' } }, splitLine: { lineStyle: { color: '#444' } } };
-      const pie = echarts.init(this.$refs.bigPieChart);
-      pie.setOption({
-        tooltip: { trigger: 'item' },
-        legend: { bottom: '5%', textStyle: { color: '#aaa' } },
-        series: [{
-          type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
-          data: this.cropOptions.slice(0, 5).map((c, i) => ({ name: c.name, value: (5 - i) * 20 })),
-          label: { color: '#aaa' },
-          itemStyle: { borderRadius: 6, borderColor: '#1a2a3a', borderWidth: 2 }
-        }],
-        color: ['#4caf50', '#2196f3', '#ff9800', '#f44336', '#9c27b0']
-      });
-      const line = echarts.init(this.$refs.bigLineChart);
-      line.setOption({
-        tooltip: { trigger: 'axis' },
-        legend: { data: ['产量'], textStyle: { color: '#aaa' }, top: 0 },
-        grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
-        xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], ...darkColor },
-        yAxis: { type: 'value', ...darkColor },
-        series: [{
-          name: '产量', type: 'line', smooth: true,
-          data: [100, 200, 500, 800, 1200, 1800, 2500, 3000, 2800, 2000, 1200, 600],
-          areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(76,175,80,0.5)' }, { offset: 1, color: 'rgba(76,175,80,0)' }
-          ]) },
-          lineStyle: { color: '#4caf50' },
-          itemStyle: { color: '#4caf50' }
-        }]
-      });
-      const bar1 = echarts.init(this.$refs.bigBarChart1);
-      bar1.setOption({
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: ['化肥', '农药', '种子', '工具'], ...darkColor },
-        yAxis: { type: 'value', ...darkColor },
-        series: [{
-          name: '消耗量', type: 'bar', data: [150, 80, 30, 15],
-          itemStyle: { color: '#4caf50', borderRadius: [4, 4, 0, 0] },
-          barWidth: '50%'
-        }]
-      });
-      const bar2 = echarts.init(this.$refs.bigBarChart2);
-      bar2.setOption({
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: ['播种', '施肥', '浇水', '除草', '病虫害防治', '采收'], ...darkColor },
-        yAxis: { type: 'value', ...darkColor },
-        series: [{
-          name: '用工数', type: 'bar', data: [20, 35, 15, 25, 18, 30],
-          itemStyle: { color: '#2196f3', borderRadius: [4, 4, 0, 0] },
-          barWidth: '50%'
-        }]
-      });
+      
+      const pie = this.getChartInstance('bigPieChart');
+      if (pie) {
+        pie.setOption({
+          tooltip: { trigger: 'item' },
+          legend: { bottom: '5%', textStyle: { color: '#aaa' } },
+          series: [{
+            type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
+            data: this.cropOptions.slice(0, 5).map((c, i) => ({ name: c.name || '未知作物', value: (5 - i) * 20 })),
+            label: { color: '#aaa' },
+            itemStyle: { borderRadius: 6, borderColor: '#1a2a3a', borderWidth: 2 }
+          }],
+          color: ['#4caf50', '#2196f3', '#ff9800', '#f44336', '#9c27b0']
+        });
+      }
+      
+      const line = this.getChartInstance('bigLineChart');
+      if (line) {
+        line.setOption({
+          tooltip: { trigger: 'axis' },
+          legend: { data: ['产量'], textStyle: { color: '#aaa' }, top: 0 },
+          grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
+          xAxis: { type: 'category', data: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'], ...darkColor },
+          yAxis: { type: 'value', ...darkColor },
+          series: [{
+            name: '产量', type: 'line', smooth: true,
+            data: [100, 200, 500, 800, 1200, 1800, 2500, 3000, 2800, 2000, 1200, 600],
+            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(76,175,80,0.5)' }, { offset: 1, color: 'rgba(76,175,80,0)' }
+            ]) },
+            lineStyle: { color: '#4caf50' },
+            itemStyle: { color: '#4caf50' }
+          }]
+        });
+      }
+      
+      const bar1 = this.getChartInstance('bigBarChart1');
+      if (bar1) {
+        bar1.setOption({
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          xAxis: { type: 'category', data: ['化肥', '农药', '种子', '工具'], ...darkColor },
+          yAxis: { type: 'value', ...darkColor },
+          series: [{
+            name: '消耗量', type: 'bar', data: [150, 80, 30, 15],
+            itemStyle: { color: '#4caf50', borderRadius: [4, 4, 0, 0] },
+            barWidth: '50%'
+          }]
+        });
+      }
+      
+      const bar2 = this.getChartInstance('bigBarChart2');
+      if (bar2) {
+        bar2.setOption({
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+          xAxis: { type: 'category', data: ['播种', '施肥', '浇水', '除草', '病虫害防治', '采收'], ...darkColor },
+          yAxis: { type: 'value', ...darkColor },
+          series: [{
+            name: '用工数', type: 'bar', data: [20, 35, 15, 25, 18, 30],
+            itemStyle: { color: '#2196f3', borderRadius: [4, 4, 0, 0] },
+            barWidth: '50%'
+          }]
+        });
+      }
     },
     async loadChartsDashboard() {
       try {
@@ -4750,24 +4800,27 @@ new Vue({
     },
     loadDashboardData() { this.loadChartsDashboard(); },
     initCharts(plantingData, harvestData, materialData, laborData) {
-      if (this.$refs.chartPie1) {
-        const c = echarts.init(this.$refs.chartPie1);
-        const fieldData = this.fieldOptions.map(f => ({ name: f.name, value: f.area || 0 }));
-        c.setOption({
+      this.disposeCharts('chart');
+      
+      const c1 = this.getChartInstance('chartPie1');
+      if (c1) {
+        const fieldData = (this.fieldOptions || []).map(f => ({ name: f.name || '未知地块', value: f.area || 0 }));
+        c1.setOption({
           tooltip: { trigger: 'item' },
           legend: { bottom: '5%' },
           series: [{
             type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'],
-            data: fieldData,
+            data: fieldData.filter(d => d.value > 0).length > 0 ? fieldData : [{ name: '暂无数据', value: 1 }],
             label: { formatter: '{b}: {c}亩' }
           }],
           color: ['#2d8a4e', '#4caf50', '#81c784', '#a5d6a7', '#c8e6c9']
         });
       }
-      if (this.$refs.chartLine1) {
-        const c = echarts.init(this.$refs.chartLine1);
+      
+      const c2 = this.getChartInstance('chartLine1');
+      if (c2) {
         const harvestStats = harvestData && harvestData.monthly ? harvestData.monthly : [100, 200, 500, 800, 1200, 1800, 2500, 3000, 2800, 2000, 1200, 600];
-        c.setOption({
+        c2.setOption({
           tooltip: { trigger: 'axis' },
           legend: { data: ['产量'], top: 0 },
           grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
@@ -4782,17 +4835,18 @@ new Vue({
           }]
         });
       }
-      if (this.$refs.chartBar1) {
-        const c = echarts.init(this.$refs.chartBar1);
+      
+      const c3 = this.getChartInstance('chartBar1');
+      if (c3) {
         const cats = ['化肥', '农药', '种子', '工具'];
         const data = cats.map(cat => {
           if (materialData && materialData.byCategory) {
             const item = materialData.byCategory.find(m => m.category === cat);
             return item ? (item.stock || 0) : 0;
           }
-          return this.materialOptions.filter(m => m.category === cat).reduce((s, m) => s + (m.currentStock || 0), 0);
+          return (this.materialOptions || []).filter(m => m.category === cat).reduce((s, m) => s + (m.currentStock || 0), 0);
         });
-        c.setOption({
+        c3.setOption({
           tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
           grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
           xAxis: { type: 'category', data: cats },
@@ -4804,8 +4858,9 @@ new Vue({
           }]
         });
       }
-      if (this.$refs.chartPie2) {
-        const c = echarts.init(this.$refs.chartPie2);
+      
+      const c4 = this.getChartInstance('chartPie2');
+      if (c4) {
         const types = ['播种', '施肥', '浇水', '除草', '病虫害防治', '采收'];
         let workorderTypeData = [];
         if (laborData && laborData.byType) {
@@ -4813,19 +4868,20 @@ new Vue({
         } else {
           workorderTypeData = types.map(t => ({ name: t, value: Math.floor(Math.random() * 10) }));
         }
-        c.setOption({
+        c4.setOption({
           tooltip: { trigger: 'item' },
           legend: { bottom: '5%' },
           series: [{
             type: 'pie', radius: '60%', center: ['50%', '45%'],
-            data: workorderTypeData.filter(d => d.value > 0)
+            data: workorderTypeData.filter(d => d.value > 0).length > 0 ? workorderTypeData.filter(d => d.value > 0) : [{ name: '暂无数据', value: 1 }]
           }],
           color: ['#2d8a4e', '#4caf50', '#2196f3', '#ff9800', '#f44336', '#9c27b0']
         });
       }
-      if (this.$refs.chartLine2) {
-        const c = echarts.init(this.$refs.chartLine2);
-        c.setOption({
+      
+      const c5 = this.getChartInstance('chartLine2');
+      if (c5) {
+        c5.setOption({
           tooltip: { trigger: 'axis' },
           legend: { data: ['销售额'], top: 0 },
           grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
@@ -4840,8 +4896,9 @@ new Vue({
           }]
         });
       }
-      if (this.$refs.chartBar2) {
-        const c = echarts.init(this.$refs.chartBar2);
+      
+      const c6 = this.getChartInstance('chartBar2');
+      if (c6) {
         const types = ['播种', '施肥', '浇水', '除草', '病虫害防治', '采收'];
         let laborTypeData = [];
         if (laborData && laborData.hoursByType) {
@@ -4849,7 +4906,7 @@ new Vue({
         } else {
           laborTypeData = types.map(t => Math.floor(Math.random() * 100));
         }
-        c.setOption({
+        c6.setOption({
           tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
           grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
           xAxis: { type: 'category', data: types },
