@@ -1,0 +1,7 @@
+node_modules/
+uploads/
+*.pptx
+generate-ppt.js
+copy-to-desktop.js
+test-edit.js
+.DS_Store
